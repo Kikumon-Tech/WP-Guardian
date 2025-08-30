@@ -7,7 +7,7 @@ cmake_policy(SET CMP0148 NEW)
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
 # vcpkg toolchain
-set(CMAKE_TOOLCHAIN_FILE "E:/Documents/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+set(CMAKE_TOOLCHAIN_FILE "Your vcpkg directory" CACHE STRING "")
 # GLFW, OpenGL, OpenCV, GLEW, CPR
 find_package(glfw3 CONFIG REQUIRED)
 find_package(OpenCV REQUIRED)
