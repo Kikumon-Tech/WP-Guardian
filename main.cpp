@@ -26,7 +26,6 @@
 
 void setWindowIconFromExe(GLFWwindow* window) {
     HWND hwnd = glfwGetWin32Window(window);
-
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
 
@@ -37,12 +36,11 @@ void setWindowIconFromExe(GLFWwindow* window) {
     if (hIconLarge) {
         HICON prev = (HICON)SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconLarge);
         if (prev) DestroyIcon(prev);
-        DestroyIcon(hIconLarge); // 自分で確保したリソースを破棄
     }
+
     if (hIconSmall) {
         HICON prev = (HICON)SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
         if (prev) DestroyIcon(prev);
-        DestroyIcon(hIconSmall);
     }
 }
 
@@ -151,24 +149,12 @@ cv::Mat applyAlphaMask(const cv::Mat& src, const cv::Mat& mask) {
     return dst;
 }
 
-void ensureBGRA(cv::Mat& img) {
+void ensureBGRA(cv::Mat& img){
     if (img.empty()) return;
-    if (img.channels() == 3) {
-        cv::cvtColor(img, img, cv::COLOR_BGR2BGRA);
-    }
+    if (img.channels()==3) cv::cvtColor(img,img,COLOR_BGR2BGRA);
 }
 
-void recreateTexture(GLuint texID, const cv::Mat& img) {
-    if (img.empty()) return;
-    glBindTexture(GL_TEXTURE_2D, texID);
-    GLenum format = (img.channels()==3)? GL_BGR : GL_BGRA;
-    GLint internalFormat = (img.channels()==3)? GL_RGB8 : GL_RGBA8;
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat,
-                 img.cols, img.rows, 0, format, GL_UNSIGNED_BYTE, img.data);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
+
 
 std::tuple<cv::Mat, int, int> imageDifferenceSafe(const cv::Mat& img1, const cv::Mat& img2) {
     if (img1.empty() || img2.empty()) return {cv::Mat(), 0, 0};
@@ -200,9 +186,14 @@ std::tuple<cv::Mat, int, int> imageDifferenceSafe(const cv::Mat& img1, const cv:
     else alpha = cv::Mat::ones(roi.size(), CV_8U) * 255;
 
     // RGBAにマージ
-    std::vector<cv::Mat> rgba{rgbDiff, alpha};
     cv::Mat merged;
-    cv::merge(rgba, merged);
+    std::vector<cv::Mat> ch;
+    cv::split(rgbDiff, ch);
+    ch.push_back(alpha);
+    cv::merge(ch, merged);
+
+
+
     merged.copyTo(diffImage(roi));
 
     // マスク作成：元画像の不透明ピクセル
@@ -225,19 +216,13 @@ std::tuple<cv::Mat, int, int> imageDifferenceSafe(const cv::Mat& img1, const cv:
     return {diffImage, totalOpaquePixels, changedPixels};
 }
 
-cpr::Response cancellable_fetch(const std::string& url, const cpr::Header& headers) {
-    try {
-        auto future = cpr::GetAsync(cpr::Url{url}, headers, cpr::Timeout{5000});
-        while (!abort_fetch && future.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {}
-        if (abort_fetch) {
-            // futureの中身を捨ててもリソースが解放されるようにget()を呼んで握り潰す
-            try { future.get(); } catch (...) {}
-            return cpr::Response{};
-        }
+cpr::Response cancellable_fetch(const std::string& url,const cpr::Header& headers){
+    try{
+        auto future = cpr::GetAsync(cpr::Url{url},headers,cpr::Timeout{5000});
+        while(!abort_fetch && future.wait_for(std::chrono::milliseconds(50))!=std::future_status::ready){}
+        if(abort_fetch){ try{future.get();}catch(...){}} 
         return future.get();
-    } catch (...) {
-        return cpr::Response{};
-    }
+    }catch(...){ return cpr::Response{};}
 }
 
 cv::Mat fetch_tiles_and_crop_cpp(
@@ -299,13 +284,13 @@ cv::Mat fetch_tiles_and_crop_cpp(
 }
 
 GLuint matToTexture(const cv::Mat& mat){
-    if (mat.empty() || mat.cols <= 0 || mat.rows <= 0) return 0;
+    if(mat.empty()) return 0;
     GLuint texID;
     glGenTextures(1,&texID);
     glBindTexture(GL_TEXTURE_2D,texID);
-    GLenum format = (mat.channels()==1)? GL_RED : (mat.channels()==3)? GL_BGR : GL_BGRA;
-    GLint internalFormat = (mat.channels()==1)? GL_R8 : (mat.channels()==3)? GL_RGB8 : GL_RGBA8;
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, mat.cols, mat.rows, 0, format, GL_UNSIGNED_BYTE, mat.data);
+    GLenum format = (mat.channels()==3)? GL_BGR : GL_BGRA;
+    GLint internalFormat = (mat.channels()==3)? GL_RGB8 : GL_RGBA8;
+    glTexImage2D(GL_TEXTURE_2D,0,internalFormat,mat.cols,mat.rows,0,format,GL_UNSIGNED_BYTE,mat.data);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D,0);
@@ -530,14 +515,19 @@ int main(){
                         ensureBGRA(originalImg);
                         if (originalTexID) glDeleteTextures(1, &originalTexID);
                         originalTexID = matToTexture(originalImg);
-                        recreateTexture(originalTexID, originalImg);
                         width   = originalImg.cols;
                         height = originalImg.rows;
                         realtimeImg = cv::Mat(height, width, CV_8UC4, cv::Scalar(0,0,0,0));
                         emptyDiff   = cv::Mat(height, width, CV_8UC4, cv::Scalar(0,0,0,0));
-                        recreateTexture(originalTexID, originalImg);
-                        recreateTexture(realtimeTexID, realtimeImg);
-                        recreateTexture(diffTexID,      emptyDiff);
+                        if(originalTexID) glDeleteTextures(1, &originalTexID);
+                        originalTexID = matToTexture(originalImg);
+
+                        if(realtimeTexID) glDeleteTextures(1, &realtimeTexID);
+                        realtimeTexID = matToTexture(realtimeImg);
+
+                        if(diffTexID) glDeleteTextures(1, &diffTexID);
+                        diffTexID = matToTexture(emptyDiff);
+
                     }
                 }
 
