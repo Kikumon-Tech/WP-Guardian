@@ -25,25 +25,24 @@
 #include <fstream> // C++のファイルストリームを使用
 
 void setWindowIconFromExe(GLFWwindow* window) {
-    // GLFW のウィンドウハンドルを取得
     HWND hwnd = glfwGetWin32Window(window);
 
-    // 実行ファイルパス
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
 
-    // exe からアイコンを取得
     HICON hIconLarge = nullptr;
     HICON hIconSmall = nullptr;
     ExtractIconExA(exePath, 0, &hIconLarge, &hIconSmall, 1);
 
     if (hIconLarge) {
-        // タスクバー用の大きいアイコン
-        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconLarge);
+        HICON prev = (HICON)SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconLarge);
+        if (prev) DestroyIcon(prev);
+        DestroyIcon(hIconLarge); // 自分で確保したリソースを破棄
     }
     if (hIconSmall) {
-        // ウィンドウ右上やタイトルバー用の小さいアイコン
-        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+        HICON prev = (HICON)SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+        if (prev) DestroyIcon(prev);
+        DestroyIcon(hIconSmall);
     }
 }
 
@@ -51,6 +50,8 @@ void setWindowIconFromExe(GLFWwindow* window) {
 using namespace cv;
 
 std::atomic<bool> abort_fetch{false};
+
+std::atomic<bool> stopThread{false};
 
 static bool showOriginal = true;
 static bool showRealtime = true;
@@ -228,7 +229,11 @@ cpr::Response cancellable_fetch(const std::string& url, const cpr::Header& heade
     try {
         auto future = cpr::GetAsync(cpr::Url{url}, headers, cpr::Timeout{5000});
         while (!abort_fetch && future.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {}
-        if (abort_fetch) return cpr::Response{};
+        if (abort_fetch) {
+            // futureの中身を捨ててもリソースが解放されるようにget()を呼んで握り潰す
+            try { future.get(); } catch (...) {}
+            return cpr::Response{};
+        }
         return future.get();
     } catch (...) {
         return cpr::Response{};
@@ -377,7 +382,6 @@ int main(){
     std::mutex imgMutex;
     std::condition_variable cv_newFrame;
     bool newFrameReady = false;
-    std::atomic<bool> stopThread{false};
 
 
     std::thread updateThread([&](){
@@ -403,6 +407,7 @@ int main(){
     glfwSetWindowCloseCallback(window, [](GLFWwindow* win) {
         glfwSetWindowShouldClose(win, GLFW_TRUE);
         abort_fetch = true;
+        stopThread = true;
     });
 
 
