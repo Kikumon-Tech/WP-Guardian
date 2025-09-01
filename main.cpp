@@ -519,8 +519,6 @@ int main(){
                         height = originalImg.rows;
                         realtimeImg = cv::Mat(height, width, CV_8UC4, cv::Scalar(0,0,0,0));
                         emptyDiff   = cv::Mat(height, width, CV_8UC4, cv::Scalar(0,0,0,0));
-                        if(originalTexID) glDeleteTextures(1, &originalTexID);
-                        originalTexID = matToTexture(originalImg);
 
                         if(realtimeTexID) glDeleteTextures(1, &realtimeTexID);
                         realtimeTexID = matToTexture(realtimeImg);
